@@ -1,0 +1,6 @@
+dados/
+.idea/
+__pycache__/
+Shapefiles/
+simulacoes/
+ETA/
