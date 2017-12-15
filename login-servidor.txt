@@ -1,0 +1,8 @@
+servidor: canopus.cpa.unicamp.br
+login: danielbarbosa
+senha: B4#EdarespU8
+
+apps: puTTy, FileZilla
+
+erro: "Network error: Software caused connection abort"
+parou em 60005
