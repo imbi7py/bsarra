@@ -29,45 +29,37 @@ class balancoHidrico():
         # self.variaveisSaida = VariaveisSaida(columns=self.columns)
         self.variaveisSaida = pd.DataFrame(columns=self.columns)
 
-    def lerDadosMeteorologicos(self, estacao, parametros, inicioPlantio, dados = 'agritempo'):
+    def lerDadosMeteorologicos(self, estacao, parametros, dados = 'agritempo'):
         self.parametros = parametros
 
         self.estacao = estacao
-        #print(self.cultura.reservaUtilSolo)
+
         self.parametros.RESERVAUTIL = self.cultura.reservaUtilSolo[self.parametros.tipoSolo - 1] # Calcula reserva util
-        #self.parametros.PROFMAXIMA = 40 # VALOR PARA O MILHO
         self.parametros.PROFMAXIMA = self.parametros.RESERVAUTIL * 1000/self.parametros.CAD # Mais dados da reserva
 
-        self.dadosMeteorologicos = self.estacao.lerDadosMeteorologicos(self.parametros.anosDadosHistoricos, inicioPlantio, dados)
+        self.dadosMeteorologicos = self.estacao.lerDadosMeteorologicos(self.parametros.anosDadosHistoricos, dados)
 
         if not self.dadosMeteorologicos.empty:
-            #print(self.dadosMeteorologicos[:][0:4])
             self.limitesDadosHistoricos = (self.dadosMeteorologicos.dropna(how='any').first_valid_index(),
                                            self.dadosMeteorologicos.dropna(how='any').last_valid_index())
             self.dadosMeteorologicos['irrigacao'] = 0
 
-            #print(self.limitesDadosHistoricos)
-
             if dados == 'hadgem' or dados == 'miroc':
                 self.limitesDadosHistoricos = (self.limitesDadosHistoricos[0].date(), self.limitesDadosHistoricos[1].date())
-            #print(self.limitesDadosHistoricos)
+
+
             anosDisponiveis = [ano for ano in range(self.limitesDadosHistoricos[0].year, self.limitesDadosHistoricos[1].year + 1)]
-            #print(anosDisponiveis)
-           # if self.limitesDadosHistoricos[0].day > 1 or self.limitesDadosHistoricos[0].month > 1:
-            #    print('removeu')
-            #    anosDisponiveis.remove(self.limitesDadosHistoricos[0].year)
-            #if self.limitesDadosHistoricos[1].day < 31 or self.limitesDadosHistoricos[1].month < 11:
-            #    anosDisponiveis.remove(self.limitesDadosHistoricos[1].year)
+            if self.limitesDadosHistoricos[0].day > 1 or self.limitesDadosHistoricos[0].month > 1:
+                anosDisponiveis.remove(self.limitesDadosHistoricos[0].year)
+            if self.limitesDadosHistoricos[1].day < 31 or self.limitesDadosHistoricos[1].month < 11:
+                anosDisponiveis.remove(self.limitesDadosHistoricos[1].year)
 
-            #print(self.parametros.anosDadosHistoricos)
-            #print(anosDisponiveis)
-
-            self.ETPsDecendiais = self.etp_Thornthwaite([ano for ano in self.parametros.anosDadosHistoricos if ano in anosDisponiveis], inicioPlantio)
+            self.ETPsDecendiais = self.etp_Thornthwaite([ano for ano in self.parametros.anosDadosHistoricos if ano in anosDisponiveis])
 
 
 
     # Cálculo dos ETPs decendiais
-    def etp_Thornthwaite(self, anosCalculoETP, inicioPlantioTuple):
+    def etp_Thornthwaite(self, anosCalculoETP):
         latitudeRad = deg2rad(self.estacao.latitude)
 
         temperaturaMensalAcc = np.array([]).reshape(0, 12)
@@ -77,104 +69,96 @@ class balancoHidrico():
         # O ETP é calculado anualmente e o resultado final é a média desses cálculos
         # anosCalculoETP grava os anos selecionados pelo usuário para o cálculo do ETP
         if anosCalculoETP:
-            #for ano in anosCalculoETP:
-            ano = min(anosCalculoETP)
-            ### Calcula medias mensais e decendiais de temperatura para um ano ###
-            diaAtual = date(ano, inicioPlantioTuple[0], inicioPlantioTuple[1])
+            for ano in anosCalculoETP:
+                ### Calcula medias mensais e decendiais de temperatura para um ano ###
+                diaAtual = date(ano, 1, 1)
 
-            temperaturaAcum = 0
-            temperaturaAcumMes = 0
+                temperaturaAcum = 0
+                temperaturaAcumMes = 0
+                diasNoDecendio = 0
+                diasNoMes = 0
+
+                temperaturaMensal = []
+                temperaturaDecendio = np.zeros((12, 3))
+
+
+                while diaAtual.year == ano:
+                    if self.dadosMeteorologicos['tmed'][diaAtual] is not None:
+                        temperaturaAcum += self.dadosMeteorologicos['tmed'][diaAtual]
+                        temperaturaAcumMes += self.dadosMeteorologicos['tmed'][diaAtual]
+                        diasNoDecendio += 1
+                        diasNoMes += 1
+
+                    amanha = diaAtual + timedelta(days=1)
+
+
+                    if amanha.month != diaAtual.month:
+                        if diasNoMes > 0:
+                            # Corrigir temperaturas negativas
+                            temperaturaMensal.append(temperaturaAcumMes/diasNoMes * (temperaturaAcumMes >= 0))
+                        else:
+                            temperaturaMensal.append(25)
+
+                        temperaturaAcumMes = 0
+                        diasNoMes = 0
+
+                    if amanha.day == 1 or amanha.day == 11 or amanha.day == 21:
+                        decendioAtual = calculosDecendiais.converterToDataDecendio(diaAtual)
+                        if diasNoDecendio > 0:
+                            temperaturaDecendio[decendioAtual[0] - 1, decendioAtual[1] - 1] = (temperaturaAcum/diasNoDecendio) * (temperaturaAcum >= 0)
+                        else:
+                            temperaturaDecendio[decendioAtual[0] - 1, decendioAtual[1] - 1] = 25
+
+                        temperaturaAcum = 0
+                        diasNoDecendio = 0
+
+                    diaAtual = amanha
+
+                ###########
+                temperaturaMensalAcc = np.vstack((temperaturaMensalAcc, temperaturaMensal))
+                temperaturaDecendioAcc = np.dstack((temperaturaDecendioAcc, temperaturaDecendio))
+
+
+
+            temperaturaMensalMedia = np.mean(temperaturaMensalAcc, axis=0)
+            temperaturaDecendioMedia = np.mean(temperaturaDecendioAcc, axis=2)
+
+            # Calcula o heat index a partir das temperaturas
+            self.temperaturaMensalMedia = temperaturaMensalMedia
+            I = 0.0
+            for Tai in temperaturaMensalMedia:
+                if Tai / 5.0 > 0.0:
+                    I += (Tai / 5.0) ** 1.514
+
+            a = (6.75e-07 * I ** 3) - (7.71e-05 * I ** 2) + (1.792e-02 * I) + 0.49239
+
+            diaAtual = date(2000, 1, 1)
+
+
+            horasDeSolAcum = 0
             diasNoDecendio = 0
-            diasNoMes = 0
 
-            temperaturaMensal = []
-            temperaturaDecendio = np.zeros((12, 3))
+            # Calcula o valor dos ETPs decendiais
+            while diaAtual.year == 2000:
+                sd = sol_dec(int(diaAtual.strftime('%j')))
+                sha = sunset_hour_angle(latitudeRad, sd)
+                horasDeSolAcum += daylight_hours(sha)
 
 
-            final = date(max(anosCalculoETP), inicioPlantioTuple[0], inicioPlantioTuple[1])
-            #print(final)
-            while (diaAtual.year in anosCalculoETP) and ((diaAtual+timedelta(days=1))!=final):
-                #print(diaAtual)
-                if self.dadosMeteorologicos['tmed'][diaAtual] is not None:
+                diasNoDecendio += 1
 
-                    temperaturaAcum += self.dadosMeteorologicos['tmed'][diaAtual]
-                    temperaturaAcumMes += self.dadosMeteorologicos['tmed'][diaAtual]
-                    diasNoDecendio += 1
-                    diasNoMes += 1
                 amanha = diaAtual + timedelta(days=1)
 
-                if amanha.month != diaAtual.month:
-                    if diasNoMes > 0:
-                        # Corrigir temperaturas negativas
-                        temperaturaMensal.append(temperaturaAcumMes/diasNoMes * (temperaturaAcumMes >= 0))
-                    else:
-                        temperaturaMensal.append(25)
-
-                    temperaturaAcumMes = 0
-                    diasNoMes = 0
-
                 if amanha.day == 1 or amanha.day == 11 or amanha.day == 21:
-                    decendioAtual = calculosDecendiais.converterToDataDecendio(diaAtual)
-                    if diasNoDecendio > 0:
-                        temperaturaDecendio[decendioAtual[0] - 1, decendioAtual[1] - 1] = (temperaturaAcum/diasNoDecendio) * (temperaturaAcum >= 0)
-                    else:
-                        temperaturaDecendio[decendioAtual[0] - 1, decendioAtual[1] - 1] = 25
+                    horasDeSolMedia = horasDeSolAcum/diasNoDecendio
 
-                    temperaturaAcum = 0
+                    decendioAtual = calculosDecendiais.converterToDataDecendio(diaAtual)
+                    ETPs[decendioAtual] = 1.6 * (horasDeSolMedia / 12.0) * (diasNoDecendio / 30.0) * ((10.0 * temperaturaDecendioMedia[decendioAtual[0] - 1, decendioAtual[1] - 1] / I) ** a) * 10.0
+                    horasDeSolAcum = 0
                     diasNoDecendio = 0
 
                 diaAtual = amanha
 
-                ###########
-            #print('temp Acumulada e temp Mensal')
-            #print(temperaturaMensalAcc)
-            #print(temperaturaMensal)
-            temperaturaMensalAcc = np.vstack((temperaturaMensalAcc, temperaturaMensal))
-            temperaturaDecendioAcc = np.dstack((temperaturaDecendioAcc, temperaturaDecendio))
-                #print(temperaturaMensalAcc)
-                #print(temperaturaMensal)
-        #print(temperaturaMensalAcc)
-
-        temperaturaMensalMedia = np.mean(temperaturaMensalAcc, axis=0)
-        temperaturaDecendioMedia = np.mean(temperaturaDecendioAcc, axis=2)
-
-        # Calcula o heat index a partir das temperaturas
-        self.temperaturaMensalMedia = temperaturaMensalMedia
-        I = 0.0
-        for Tai in temperaturaMensalMedia:
-            if Tai / 5.0 > 0.0:
-                I += (Tai / 5.0) ** 1.514
-
-        a = (6.75e-07 * I ** 3) - (7.71e-05 * I ** 2) + (1.792e-02 * I) + 0.49239
-
-        diaAtual = date(2000, 1, 1)
-
-        #print(I)
-        #print(a)
-        horasDeSolAcum = 0
-        diasNoDecendio = 0
-
-        # Calcula o valor dos ETPs decendiais
-        while diaAtual.year == 2000:
-            sd = sol_dec(int(diaAtual.strftime('%j')))
-            sha = sunset_hour_angle(latitudeRad, sd)
-            horasDeSolAcum += daylight_hours(sha)
-
-            diasNoDecendio += 1
-
-            amanha = diaAtual + timedelta(days=1)
-
-            if amanha.day == 1 or amanha.day == 11 or amanha.day == 21:
-                horasDeSolMedia = horasDeSolAcum/diasNoDecendio
-
-                decendioAtual = calculosDecendiais.converterToDataDecendio(diaAtual)
-                #print(horasDeSolMedia)
-                ETPs[decendioAtual] = 16 * (horasDeSolMedia / 12.0) * (diasNoDecendio / 30.0) * ((10.0 * temperaturaDecendioMedia[decendioAtual[0] - 1, decendioAtual[1] - 1] / I) ** a)
-                horasDeSolAcum = 0
-                diasNoDecendio = 0
-
-            diaAtual = amanha
-        print(ETPs)
         return ETPs
 
 
@@ -185,8 +169,7 @@ class balancoHidrico():
         etpAtual = self.ETPsDecendiais[decendio] # recebe dado
         etpFuturo = self.ETPsDecendiais[decendioFuturo]
         # retorna ETP estimado
-        #print(etpAtual)
-        return (etpAtual + (etpFuturo - etpAtual) * ((dia - calculosDecendiais.inicioDecendio(dia)).days) / calculosDecendiais.diasNoDecendio(dia))/10
+        return (etpAtual + (etpFuturo - etpAtual) * ((dia - calculosDecendiais.inicioDecendio(dia)).days) / calculosDecendiais.diasNoDecendio(dia)) / 10
 
 
 
@@ -246,7 +229,7 @@ class balancoHidrico():
 
     def calcularVrad(self, Hum, StRurMax):
         vRad = 100*(Hum - StRurMax)/self.parametros.RESERVAUTIL
-        deltaRur = min(Hum - StRurMax, vRad*self.parametros.RESERVAUTIL/100)
+        deltaRur = (Hum - StRurMax)/10
         #deltaRur = min(Hum - StRurMax, vRad/1000*self.parametros.RESERVAUTIL) # Nao faz sentido, sempre vai dar um decimo de (Hum - StRURMAx)
 
         return vRad, deltaRur
@@ -268,8 +251,8 @@ class balancoHidrico():
             Etm = Epc
             Etr = min(Etr, Etm) # ETR nao pode ser maior que a maxima
             Etr = max(Etr, 0) # ETR nao pode ser negativa
-            Etr = min(StRur, Etr) # ETR nao pode ser maior que St Reserva Util Radicular
-        else: # ETR nao pode ser menor que EVS
+            Etr = min(StRur, Etr) # ETR nao pode ser maior que St Reserva Util R
+        else:
             Etr = Evs
 
         return Etr, Etm, TP
@@ -416,8 +399,8 @@ class balancoHidrico():
 
             # Calcula evapotranspiracao maxima como mulch vezes a evapotranspiração potencial
             varDiaAtual['Etm'] = self.calcularEps(varDiaAtual['ETP'])
-            #varDiaAtual['Eps'] = 0 #REDUNDANTE
-            #varDiaAtual['Epc'] = 0 #REDUNDANTE
+            varDiaAtual['Eps'] = 0
+            varDiaAtual['Epc'] = 0
 
             # St reserva util superficial como o minimo entre valor calculado e tabelado
             varDiaAtual['StRuSurf'] = min(varDiaAnterior['StRuSurf'] + varDiaAtual['Apport'], self.parametros.RUSURF)
@@ -445,7 +428,7 @@ class balancoHidrico():
             varDiaAtual = VariaveisBalHidrico(self.parametros)
 
             ## Agora as outras variaveis sao determinadas pelas funcoes ja vistas
-            varDiaAtual['ETP'] = self.calcularETP(diaAtual) # decendio para diario
+            varDiaAtual['ETP'] = self.calcularETP(diaAtual) # em decendio
             varDiaAtual['Esc'] = self.calcularEsc(diaAtual) # funcao da agua em excesso
             varDiaAtual['Apport'] = self.calcularApport(diaAtual, varDiaAtual['Esc']) # funcao da precipitacao, irrigacao e escoamento
             varDiaAtual['Kc'] = self.calcularKc(diaAtual, inicioPlantio) # Calculado para o dia especifico, com aproximacoes de dados fornecidos
@@ -456,12 +439,10 @@ class balancoHidrico():
             varDiaAtual['Evs'] = min(varDiaAtual['Eps'] * varDiaAtual['StRuSurf'] / self.parametros.RUSURF, varDiaAtual['StRuSurf'])
             varDiaAtual['Etr'] = varDiaAtual['Evs']
 
-            # StRU eh atualizado ao somar Apport, Dr recebe a diferenca dele para a tabela de RU e ele recebe o valor tabelado (se ele for maior)
-            # HUM contem sempre o maior valor de reserva util ate o momento
             (varDiaAtual['StRu'], varDiaAtual['Hum'], varDiaAtual['Dr']) = self.rempliRu(varDiaAtual['Apport'], varDiaAnterior['StRu'],
                                                                                 varDiaAnterior['Hum'])
 
-            if diaAtual == inicioPlantio: #Inicializacao
+            if diaAtual == inicioPlantio:
                 varDiaAtual['Vrad'] = varDiaAnterior['Vrad']
                 varDiaAtual['StRurMax'] = varDiaAnterior['StRurMax']
                 varDiaAtual['Hr'] = varDiaAnterior['Hr']
@@ -477,57 +458,52 @@ class balancoHidrico():
                 varDiaAtual['Hr'] = self.calcularHr(varDiaAtual['StRur'], varDiaAtual['StRurMax']) # umidade relativa = StRUR/StRURMaximo
 
                 varDiaAtual['Epc'] = varDiaAtual['Kc']*varDiaAtual['ETP'] # Evapotranspiracao de Cultura (nao leva em conta restricao hidrica)
-                # Calculos fixos e algumas duvidas
+
                 (varDiaAtual['Etr'], varDiaAtual['Etm'], varDiaAtual['TP']) = self.calcularEtrEtm(varDiaAtual['Epc'], varDiaAtual['ETP'], varDiaAtual['Hr'], varDiaAtual['Evs'], varDiaAtual['StRur'], varDiaAtual['Etm'])
 
-                varDiaAtual['Eps'] = varDiaAtual['StRurMax'] - varDiaAtual['StRur'] #O QUE EH EPS?
-                varDiaAtual['StRur'] = max(varDiaAtual['StRur'] - varDiaAtual['Etr'], 0) # Subtrai ETR
+                varDiaAtual['Eps'] = varDiaAtual['StRurMax'] - varDiaAtual['StRur']
+                varDiaAtual['StRur'] = max(varDiaAtual['StRur'] - varDiaAtual['Etr'], 0)
 
-            varDiaAtual['StRuSurf'] = max(varDiaAtual['StRuSurf'] - varDiaAtual['Etr'], 0) # Subtrai ETR
-            varDiaAtual['StRu'] = max(varDiaAtual['StRu'] - varDiaAtual['Etr'], 0) # Subtrai ETR
-            varDiaAtual['EtrEtm'] = 100 * varDiaAtual['Etr'] / varDiaAtual['Etm'] # Calculo do ISNA
+            varDiaAtual['StRuSurf'] = max(varDiaAtual['StRuSurf'] - varDiaAtual['Etr'], 0)
+            varDiaAtual['StRu'] = max(varDiaAtual['StRu'] - varDiaAtual['Etr'], 0)
+            varDiaAtual['EtrEtm'] = 100 * varDiaAtual['Etr'] / varDiaAtual['Etm']
 
 
 
             return varDiaAtual
 
         def posColheita(diaAtual, varDiaAnterior):
-            # Inicializa HUM e St RU com valores do estoque, Kc é 1 e o resto comeca em zero
             varDiaAtual = VariaveisBalHidrico(self.parametros)
 
-            varDiaAtual['ETP'] = self.calcularETP(diaAtual) # Calculo por decendio
+            varDiaAtual['ETP'] = self.calcularETP(diaAtual)
             varDiaAtual['Hr'] = 0
             varDiaAtual['Kc'] = 1
 
-            varDiaAtual['Esc'] = self.calcularEsc(diaAtual)  # Agua atual em excesso que entrou no sistema
-            varDiaAtual['Apport'] = self.calcularApport(diaAtual, varDiaAtual['Esc']) # precipitacao + irrigacao - escoamento superficial
+            varDiaAtual['Esc'] = self.calcularEsc(diaAtual)
+            varDiaAtual['Apport'] = self.calcularApport(diaAtual, varDiaAtual['Esc'])
 
-            varDiaAtual['Etm'] = self.calcularEps(varDiaAtual['ETP']) # mulch * ETP
+            varDiaAtual['Etm'] = self.calcularEps(varDiaAtual['ETP'])
             varDiaAtual['Epc'] = 0
 
-            # Calculo de STRUSURF tem que ser menor do que a tabela
             varDiaAtual['StRuSurf'] = min(varDiaAnterior['StRuSurf'] + varDiaAtual['Apport'], self.parametros.RUSURF)
-            # Calculo de EVS tem que ser menor que St reserva util superficial
             varDiaAtual['Evs'] = min(varDiaAtual['Etm'] * varDiaAtual['StRuSurf']/ self.parametros.RUSURF, varDiaAtual['StRuSurf'])
             varDiaAtual['Etr'] = varDiaAtual['Evs']
 
-            # StRU eh atualizado ao somar Apport, Dr recebe a diferenca dele para a tabela de RU e ele recebe o valor tabelado (se ele for maior)
-            #HUM contem sempre o maior valor de reserva util ate o momento
             (varDiaAtual['StRu'], varDiaAtual['Hum'], varDiaAtual['Dr']) = self.rempliRu(varDiaAtual['Apport'],varDiaAnterior['StRu'],
                                                                                 varDiaAnterior['Hum'])
 
-            varDiaAtual['StRu'] = max(varDiaAtual['StRu'] - varDiaAtual['Etr'], 0) # Subtrai ETR
-            varDiaAtual['StRuSurf'] = max(varDiaAtual['StRuSurf'] - varDiaAtual['Etr'], 0) # Subtrai ETR
+            varDiaAtual['StRu'] = max(varDiaAtual['StRu'] - varDiaAtual['Etr'], 0)
+            varDiaAtual['StRuSurf'] = max(varDiaAtual['StRuSurf'] - varDiaAtual['Etr'], 0)
             varDiaAtual['Eps'] = 0
             varDiaAtual['Vrad'] = 0
             varDiaAtual['StRur'] = varDiaAnterior['StRur']
             varDiaAtual['StRurMax'] = varDiaAnterior['StRurMax']
             varDiaAtual['TP']= varDiaAnterior['TP']
-            varDiaAtual['EtrEtm'] = 100 * varDiaAtual['Etr'] / varDiaAtual['Etm'] # Calculo do ISNA
+            varDiaAtual['EtrEtm'] = 100 * varDiaAtual['Etr'] / varDiaAtual['Etm']
 
             return varDiaAtual
 
-        #print('to aqui')
+
 
         ## Começo da função balancoHidrico()
         if self.ETPsDecendiais:
@@ -543,15 +519,9 @@ class balancoHidrico():
             # Para cada ano desejado, faz-se uma simulacao
             #jm = self.dadosMeteorologicos.index(inicioSimulTuple[0])
             #ano=self.dadosMeteorologicos[:][jm].year
-            #ano in self.limitesDadosHistoricos.
-            ano=self.limitesDadosHistoricos[0].year
-            inicioSimul = date(ano, inicioSimulTuple[0], inicioSimulTuple[1])
-            inicioPlantio = date(ano, inicioPlantioTuple[0], inicioPlantioTuple[1])
+            inicioSimul = date(2000, inicioSimulTuple[0], inicioSimulTuple[1])
+            inicioPlantio = date(2000, inicioPlantioTuple[0], inicioPlantioTuple[1])
             fimSimul = inicioPlantio
-            #print('Gerei datas')
-            #print(inicioSimul)
-            #print(fimSimul)
-            #print(self.limitesDadosHistoricos)
 
             for fase in self.cultura.fases:
                 fimSimul += timedelta(days=fase) # Inicio do plantio + dias que sao fase = Data final do plantio
@@ -560,8 +530,8 @@ class balancoHidrico():
             diaColheita = fimSimul - timedelta(days=1)
 
             # Se a data de inicio esta dentro do desejado
-            if inicioSimul >= self.limitesDadosHistoricos[0]: #and fimSimul <= self.limitesDadosHistoricos[1]:
-                #print('Inicio da simulacao OK')
+            if inicioSimul >= self.limitesDadosHistoricos[0] and fimSimul <= self.limitesDadosHistoricos[1]:
+
                 diaAtual = inicioSimul # Inicia dia
                 #print(diaAtual)
                 varDiaAnterior = VariaveisBalHidrico(self.parametros)  # Inicializa variaveis de saida e coloca alguns valores delas
@@ -575,11 +545,7 @@ class balancoHidrico():
                     self.variaveisSaida = self.variaveisSaida.append(VariaveisSaida(varDiaAtual, index=[diaAtual], columns=self.columns))
 
                     # self.valoresDiarios[ano][diaAtual] = varDiaAtual
-                    #n = diaAtual+timedelta(days=1)
-                    #if (n.year != diaAtual.year):
-                    #    diaAtual.year-=1
-                    diaAtual+=timedelta(days=1)
-
+                    diaAtual += timedelta(days=1)
                     varDiaAnterior = varDiaAtual
 
                 fase = 1
@@ -589,7 +555,7 @@ class balancoHidrico():
                     varDiaAtual = fasesFenologicas(diaAtual, varDiaAnterior, inicioPlantio)
 
 
-                    if (diaAtual.day == (inicioFase + timedelta(days=self.cultura.fases[fase - 1])).day) and (diaAtual.month == (inicioFase + timedelta(days=self.cultura.fases[fase - 1])).month):
+                    if diaAtual == inicioFase + timedelta(days=self.cultura.fases[fase - 1]):
                         fase += 1
                         inicioFase = diaAtual
 
@@ -607,12 +573,14 @@ class balancoHidrico():
                     self.variaveisSaida = self.variaveisSaida.append(VariaveisSaida(varDiaAtual, index=[diaAtual], columns=self.columns))
 
                     # self.valoresDiarios[ano][diaAtual] = varDiaAtual
+
                     diaAtual += timedelta(days=1)
                     varDiaAnterior = varDiaAtual
 
 
 
             self.balancoHidricoNormalDF = self.balancoHidricoNormal()
+
 
             if not self.variaveisSaida.empty:
 

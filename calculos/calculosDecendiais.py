@@ -13,7 +13,7 @@ def inicioDecendio(data):
     return date(data.year, data.month, dia)
 
 
-def converterToDataDecendio(data):
+def converterToDataDecendio(data): # converte dia para decendio
     if data.day < 11:
         decendio = 1
     elif data.day < 21:
