@@ -51,18 +51,17 @@ class balancoHidrico():
             if dados == 'hadgem' or dados == 'miroc':
                 self.limitesDadosHistoricos = (self.limitesDadosHistoricos[0].date(), self.limitesDadosHistoricos[1].date())
             #print(self.limitesDadosHistoricos)
-            anosDisponiveis = [ano for ano in range(self.limitesDadosHistoricos[0].year, self.limitesDadosHistoricos[1].year + 1)]
+            self.anosDisponiveis = [ano for ano in range(self.limitesDadosHistoricos[0].year, self.limitesDadosHistoricos[1].year + 1)]
             #print(anosDisponiveis)
-           # if self.limitesDadosHistoricos[0].day > 1 or self.limitesDadosHistoricos[0].month > 1:
+            if self.limitesDadosHistoricos[0].day > 1 or self.limitesDadosHistoricos[0].month > 1:
             #    print('removeu')
-            #    anosDisponiveis.remove(self.limitesDadosHistoricos[0].year)
-            #if self.limitesDadosHistoricos[1].day < 31 or self.limitesDadosHistoricos[1].month < 11:
-            #    anosDisponiveis.remove(self.limitesDadosHistoricos[1].year)
+                self.anosDisponiveis.remove(self.limitesDadosHistoricos[0].year)
+            if self.limitesDadosHistoricos[1].day < 31 or self.limitesDadosHistoricos[1].month < 11:
+                self.anosDisponiveis.remove(self.limitesDadosHistoricos[1].year)
 
             #print(self.parametros.anosDadosHistoricos)
-            #print(anosDisponiveis)
-
-            self.ETPsDecendiais = self.etp_Thornthwaite([ano for ano in self.parametros.anosDadosHistoricos if ano in anosDisponiveis], inicioPlantio)
+            #print(self.anosDisponiveis)
+            self.ETPsDecendiais = self.etp_Thornthwaite([ano for ano in self.parametros.anosDadosHistoricos if ano in self.anosDisponiveis], inicioPlantio)
 
 
 
@@ -72,134 +71,159 @@ class balancoHidrico():
 
         temperaturaMensalAcc = np.array([]).reshape(0, 12)
         temperaturaDecendioAcc = np.array([]).reshape(12, 3, 0)
-        ETPs = {}
-
+        ETPs = np.zeros([len(anosCalculoETP), 13, 4])
+        self.anosCalculo = anosCalculoETP
         # O ETP é calculado anualmente e o resultado final é a média desses cálculos
         # anosCalculoETP grava os anos selecionados pelo usuário para o cálculo do ETP
         if anosCalculoETP:
-            #for ano in anosCalculoETP:
-            ano = min(anosCalculoETP)
+            for ano in anosCalculoETP:
+            #ano = min(anosCalculoETP)
             ### Calcula medias mensais e decendiais de temperatura para um ano ###
-            diaAtual = date(ano, inicioPlantioTuple[0], inicioPlantioTuple[1])
+                diaAtual = date(ano, 1, 1)
 
-            temperaturaAcum = 0
-            temperaturaAcumMes = 0
-            diasNoDecendio = 0
-            diasNoMes = 0
+                temperaturaAcum = 0
+                temperaturaAcumMes = 0
+                diasNoDecendio = 0
+                diasNoMes = 0
 
-            temperaturaMensal = []
-            temperaturaDecendio = np.zeros((12, 3))
+                temperaturaMensal = []
+                temperaturaDecendio = np.zeros((12, 3))
 
 
-            final = date(max(anosCalculoETP), inicioPlantioTuple[0], inicioPlantioTuple[1])
-            #print(final)
-            while (diaAtual.year in anosCalculoETP) and ((diaAtual+timedelta(days=1))!=final):
+                #final = date(min(anosCalculoETP)+1, inicioPlantioTuple[0], inicioPlantioTuple[1])
+                #print(anosCalculoETP)
+                while (diaAtual.year==ano):
+                #while (diaAtual.year in anosCalculoETP) and ((diaAtual)!=final):
                 #print(diaAtual)
-                if self.dadosMeteorologicos['tmed'][diaAtual] is not None:
+                    if not np.isnan(self.dadosMeteorologicos['tmed'][diaAtual]):
+                        #print(self.dadosMeteorologicos['tmed'][diaAtual])
+                        temperaturaAcum += self.dadosMeteorologicos['tmed'][diaAtual]
+                        temperaturaAcumMes += self.dadosMeteorologicos['tmed'][diaAtual]
+                        diasNoDecendio += 1
+                        diasNoMes += 1
+                    amanha = diaAtual + timedelta(days=1)
+                    #print(temperaturaAcum)
+                    if amanha.month != diaAtual.month:
+                        #print('trocou mes')
+                        #print(amanha.month)
+                        if diasNoMes > 0:
+                            # Corrigir temperaturas negativas
+                            temperaturaMensal.append(temperaturaAcumMes/diasNoMes * (temperaturaAcumMes >= 0))
+                        else:
+                            temperaturaMensal.append(25)
 
-                    temperaturaAcum += self.dadosMeteorologicos['tmed'][diaAtual]
-                    temperaturaAcumMes += self.dadosMeteorologicos['tmed'][diaAtual]
-                    diasNoDecendio += 1
-                    diasNoMes += 1
-                amanha = diaAtual + timedelta(days=1)
+                        temperaturaAcumMes = 0
+                        diasNoMes = 0
 
-                if amanha.month != diaAtual.month:
-                    if diasNoMes > 0:
-                        # Corrigir temperaturas negativas
-                        temperaturaMensal.append(temperaturaAcumMes/diasNoMes * (temperaturaAcumMes >= 0))
-                    else:
-                        temperaturaMensal.append(25)
+                    if amanha.day == 1 or amanha.day == 11 or amanha.day == 21:
+                        decendioAtual = calculosDecendiais.converterToDataDecendio(diaAtual)
+                        if diasNoDecendio > 0:
+                            temperaturaDecendio[decendioAtual[0] - 1, decendioAtual[1] - 1] = (temperaturaAcum/diasNoDecendio) * (temperaturaAcum >= 0)
+                        else:
+                            temperaturaDecendio[decendioAtual[0] - 1, decendioAtual[1] - 1] = 25
 
-                    temperaturaAcumMes = 0
-                    diasNoMes = 0
+                        temperaturaAcum = 0
+                        diasNoDecendio = 0
+                    #print(diaAtual)
+                    diaAtual = amanha
 
-                if amanha.day == 1 or amanha.day == 11 or amanha.day == 21:
-                    decendioAtual = calculosDecendiais.converterToDataDecendio(diaAtual)
-                    if diasNoDecendio > 0:
-                        temperaturaDecendio[decendioAtual[0] - 1, decendioAtual[1] - 1] = (temperaturaAcum/diasNoDecendio) * (temperaturaAcum >= 0)
-                    else:
-                        temperaturaDecendio[decendioAtual[0] - 1, decendioAtual[1] - 1] = 25
-
-                    temperaturaAcum = 0
-                    diasNoDecendio = 0
-
-                diaAtual = amanha
 
                 ###########
-            #print('temp Acumulada e temp Mensal')
-            #print(temperaturaMensalAcc)
-            #print(temperaturaMensal)
-            temperaturaMensalAcc = np.vstack((temperaturaMensalAcc, temperaturaMensal))
-            temperaturaDecendioAcc = np.dstack((temperaturaDecendioAcc, temperaturaDecendio))
+                #print('temp Acumulada e temp Mensal')
                 #print(temperaturaMensalAcc)
-                #print(temperaturaMensal)
-        #print(temperaturaMensalAcc)
+                #print(temperaturaDecendioAcc)
 
-        temperaturaMensalMedia = np.mean(temperaturaMensalAcc, axis=0)
-        temperaturaDecendioMedia = np.mean(temperaturaDecendioAcc, axis=2)
+                temperaturaMensalAcc = np.vstack((temperaturaMensalAcc, temperaturaMensal))
+                temperaturaDecendioAcc = np.dstack((temperaturaDecendioAcc, temperaturaDecendio))
+                temperaturaMensalMedia = temperaturaMensal
+                temperaturaDecendioMedia = temperaturaDecendio
+                #print(temperaturaMensalAcc)
+                #print(temperaturaDecendioAcc)
+            #print(temperaturaMensalAcc)
+
+
 
         # Calcula o heat index a partir das temperaturas
-        self.temperaturaMensalMedia = temperaturaMensalMedia
-        I = 0.0
-        for Tai in temperaturaMensalMedia:
-            if Tai / 5.0 > 0.0:
-                I += (Tai / 5.0) ** 1.514
 
-        a = (6.75e-07 * I ** 3) - (7.71e-05 * I ** 2) + (1.792e-02 * I) + 0.49239
+                I = 0.0
+                for Tai in temperaturaMensalMedia:
+                    if Tai / 5.0 > 0.0:
+                        I += (Tai / 5.0) ** 1.514
 
-        diaAtual = date(2000, 1, 1)
+                a = (6.75e-07 * I ** 3) - (7.71e-05 * I ** 2) + (1.792e-02 * I) + 0.49239
 
-        #print(I)
-        #print(a)
-        horasDeSolAcum = 0
-        diasNoDecendio = 0
-
-        # Calcula o valor dos ETPs decendiais
-        while diaAtual.year == 2000:
-            sd = sol_dec(int(diaAtual.strftime('%j')))
-            sha = sunset_hour_angle(latitudeRad, sd)
-            horasDeSolAcum += daylight_hours(sha)
-
-            diasNoDecendio += 1
-
-            amanha = diaAtual + timedelta(days=1)
-
-            if amanha.day == 1 or amanha.day == 11 or amanha.day == 21:
-                horasDeSolMedia = horasDeSolAcum/diasNoDecendio
-
-                decendioAtual = calculosDecendiais.converterToDataDecendio(diaAtual)
-                #print(horasDeSolMedia)
-                ETPs[decendioAtual] = 16 * (horasDeSolMedia / 12.0) * (diasNoDecendio / 30.0) * ((10.0 * temperaturaDecendioMedia[decendioAtual[0] - 1, decendioAtual[1] - 1] / I) ** a)
+            #print(I)
+            #print(a)
                 horasDeSolAcum = 0
                 diasNoDecendio = 0
+                diaAtual = date(ano, 1, 1)
+                while (diaAtual.year == ano):
+        # Calcula o valor dos ETPs decendiais
+        #while diaAtual.year == 2000:
+                    sd = sol_dec(int(diaAtual.strftime('%j')))
+                    sha = sunset_hour_angle(latitudeRad, sd)
+                    horasDeSolAcum += daylight_hours(sha)
+                    idx = anosCalculoETP.index(ano)
+                    diasNoDecendio += 1
 
-            diaAtual = amanha
-        print(ETPs)
-        return ETPs
+                    amanha = diaAtual + timedelta(days=1)
+
+                    if amanha.day == 1 or amanha.day == 11 or amanha.day == 21:
+                        horasDeSolMedia = horasDeSolAcum/diasNoDecendio
+                        decendioAtual = calculosDecendiais.converterToDataDecendio(diaAtual)
+                        #print(idx)
+                        #print(decendioAtual)
+                        #print(temperaturaDecendioMedia)
+
+                        ETPs[idx][decendioAtual] = 16 * (horasDeSolMedia / 12.0) * (diasNoDecendio / 30.0) * ((10.0 * temperaturaDecendioMedia[decendioAtual[0] - 1, decendioAtual[1] - 1] / I) ** a)
+                        horasDeSolAcum = 0
+                        diasNoDecendio = 0
+
+                    diaAtual = amanha
+            self.temperaturaMensalMedia = temperaturaMensalAcc
+            return ETPs
 
 
     # Calcula o valor do ETP diario interpolando valores decendiais
     def calcularETP(self, dia):
         decendio = calculosDecendiais.converterToDataDecendio(dia) # passa de dia para decendio
         decendioFuturo = calculosDecendiais.proximoDecendio(decendio)
-        etpAtual = self.ETPsDecendiais[decendio] # recebe dado
-        etpFuturo = self.ETPsDecendiais[decendioFuturo]
+        i = self.anosCalculo.index(dia.year)
+        etpAtual = self.ETPsDecendiais[i][decendio] # recebe dado
+        etpFuturo = self.ETPsDecendiais[i][decendioFuturo]
         # retorna ETP estimado
         #print(etpAtual)
         return (etpAtual + (etpFuturo - etpAtual) * ((dia - calculosDecendiais.inicioDecendio(dia)).days) / calculosDecendiais.diasNoDecendio(dia))/10
 
 
 
-    def calcularEsc(self, diaAtual):
+    def calcularEsc(self, diaAtual, diaAnterior):
         # Soma dados de precipitacao e irrigacao
         enplus = self.dadosMeteorologicos['prec'][diaAtual] + self.dadosMeteorologicos['irrigacao'][diaAtual]
-        esc = 0
+        #esc = 0
         # Se a agua que entrou no sistema eh maior que o que ele pode armazenar, ha escoamento
         # Ele eh encontrado em funcao do parametro escoamento superficial e a agua que esta transbordando
-        if enplus > self.parametros.chuvaLimite:
-            esc = (enplus - self.parametros.chuvaLimite) * self.parametros.escoamentoSuperficial/100
+        #if enplus > self.parametros.chuvaLimite:
+        #    esc = (enplus - self.parametros.chuvaLimite) * self.parametros.escoamentoSuperficial/100
 
-        return esc
+        if self.parametros.tipoSolo==1:
+            a1=0.2
+            a2=0.03
+            a3=0.004
+            a4=3
+        elif self.parametros.tipoSolo==2:
+            a1=0.35
+            a2=0.04
+            a3=0.004
+            a4=3
+        elif self.parametros.tipoSolo==3:
+            a1=0.9
+            a2=0.05
+            a3=0.002
+            a4=10
+        ik = 0.665*(enplus+ diaAnterior['ik'])
+        esc=a1*enplus + a2*ik + a3*enplus*ik - a4
+        return max(esc,0), ik
 
 
     def calcularApport(self, diaAtual, Esc):
@@ -246,6 +270,7 @@ class balancoHidrico():
 
     def calcularVrad(self, Hum, StRurMax):
         vRad = 100*(Hum - StRurMax)/self.parametros.RESERVAUTIL
+        #vRad=30
         deltaRur = min(Hum - StRurMax, vRad*self.parametros.RESERVAUTIL/100)
         #deltaRur = min(Hum - StRurMax, vRad/1000*self.parametros.RESERVAUTIL) # Nao faz sentido, sempre vai dar um decimo de (Hum - StRURMAx)
 
@@ -316,13 +341,14 @@ class balancoHidrico():
         balancoHidricoNormalDF['ano'] = balancoHidricoNormalDF.index.year
         balancoHidricoNormalDF['mes'] = balancoHidricoNormalDF.index.month
 
-        balancoHidricoNormalDF = balancoHidricoNormalDF.groupby(['ano', 'mes']).aggregate({'prec': np.sum, 'mes': np.mean}).groupby(['mes']).aggregate(
-            {'prec': np.mean})
-
+        balancoHidricoNormalDF = balancoHidricoNormalDF.groupby(['ano', 'mes']).aggregate({'prec': np.sum})
+        #print(balancoHidricoNormalDF['prec'])
         ETPMensal = {}
-
-        for mes in range(1, 13):
-            ETPMensal[mes] = self.ETPsDecendiais[(mes, 1)] + self.ETPsDecendiais[(mes, 2)] + self.ETPsDecendiais[(mes, 3)]
+        #print(self.ETPsDecendiais)
+        for ano in range(len(self.anosCalculo)):
+            for mes in range(1, 13):
+                ETPMensal[(self.anosCalculo[ano], mes)] = self.ETPsDecendiais[ano][(mes, 1)] + self.ETPsDecendiais[ano][(mes, 2)] + self.ETPsDecendiais[ano][(mes, 3)]
+                #print(ETPMensal)
 
         balancoHidricoNormalDF = pd.concat([balancoHidricoNormalDF, pd.Series(ETPMensal, name='ETP')], axis=1)
         balancoHidricoNormalDF['P - ETP'] = balancoHidricoNormalDF['prec'] - balancoHidricoNormalDF['ETP']
@@ -335,61 +361,67 @@ class balancoHidrico():
         balancoHidricoNormalDF['Etr'] = 0
         balancoHidricoNormalDF['Def'] = 0
         balancoHidricoNormalDF['Exc'] = 0
-
-
+        #print(balancoHidricoNormalDF['P - ETP'])
+        #print(len(balancoHidricoNormalDF['P - ETP']))
+        #print(balancoHidricoNormalDF['P - ETP'][2010])
         # Inicializar o BH
-        if (np.sum(balancoHidricoNormalDF['P - ETP']) >= 0) or \
-                (np.sum(balancoHidricoNormalDF['P - ETP']) < 0 and \
-                         np.sum(balancoHidricoNormalDF.loc[balancoHidricoNormalDF['P - ETP'] > 0, 'P - ETP']) >= self.parametros.CAD):
-            balancoHidricoNormalDF.loc[fimEstacaoUmida, 'ARM'] = self.parametros.CAD
-        else:
-            balancoHidricoNormalDF.loc[fimEstacaoUmida, 'Neg'] = self.parametros.CAD*np.log((np.sum(balancoHidricoNormalDF.loc[balancoHidricoNormalDF['P - ETP'] > 0, 'P - ETP'])/self.parametros.CAD)/ \
-                  (1 - np.exp(np.sum(balancoHidricoNormalDF.loc[balancoHidricoNormalDF['P - ETP'] < 0, 'P - ETP'])/self.parametros.CAD)))
-
-            balancoHidricoNormalDF.loc[fimEstacaoUmida, 'ARM'] = self.parametros.CAD*np.exp(balancoHidricoNormalDF['Neg'][fimEstacaoUmida]/self.parametros.CAD)
-
-        for mes in range(fimEstacaoUmida + 1, fimEstacaoUmida + 13):
-            if mes <= 12:
-                mesAtual = mes
-                mesAnterior = mesAtual - 1
+        for i in self.anosCalculo:
+            #print(np.sum(balancoHidricoNormalDF['P - ETP'][i]) >= 0)
+            #print(balancoHidricoNormalDF.loc[(i, fimEstacaoUmida), 'ARM'])
+            #print(np.sum(balancoHidricoNormalDF['P - ETP'][i]) < 0)
+            #print(balancoHidricoNormalDF.loc[balancoHidricoNormalDF['P - ETP'] > 0, 'P - ETP'][i])
+            #print(balancoHidricoNormalDF['ARM'][i])
+            #print(balancoHidricoNormalDF['ARM'][i, fimEstacaoUmida])
+            if (np.sum(balancoHidricoNormalDF['P - ETP'][i]) >= 0) or (np.sum(balancoHidricoNormalDF['P - ETP'][i]) < 0 and np.sum(balancoHidricoNormalDF.loc[balancoHidricoNormalDF['P - ETP'] > 0, 'P - ETP'][i]) >= self.parametros.CAD):
+                balancoHidricoNormalDF['ARM'].loc[i, fimEstacaoUmida] = self.parametros.CAD
             else:
-                mesAtual = mes % 12
+                balancoHidricoNormalDF['Neg'].loc[i, fimEstacaoUmida] = self.parametros.CAD*np.log((np.sum(balancoHidricoNormalDF.loc[balancoHidricoNormalDF['P - ETP'] > 0, 'P - ETP'][i])/self.parametros.CAD)/ \
+                  (1 - np.exp(np.sum(balancoHidricoNormalDF.loc[balancoHidricoNormalDF['P - ETP'] < 0, 'P - ETP'][i])/self.parametros.CAD)))
 
-                if mesAtual == 1:
-                    mesAnterior = 12
-                elif mesAtual == 0:
-                    mesAtual = 12
-                    mesAnterior = 11
-                else:
+                balancoHidricoNormalDF['ARM'].loc[i, fimEstacaoUmida] = self.parametros.CAD*np.exp(balancoHidricoNormalDF['Neg'][i, fimEstacaoUmida]/self.parametros.CAD)
+
+            for mes in range(fimEstacaoUmida + 1, fimEstacaoUmida + 13):
+                if mes <= 12:
+                    mesAtual = mes
                     mesAnterior = mesAtual - 1
+                else:
+                    mesAtual = mes % 12
 
-            if balancoHidricoNormalDF['P - ETP'][mesAtual] < 0:
-                balancoHidricoNormalDF.loc[mesAtual, 'Neg'] = balancoHidricoNormalDF['Neg'][mesAnterior] + \
-                                                              balancoHidricoNormalDF['P - ETP'][mesAtual]
-                balancoHidricoNormalDF.loc[mesAtual, 'ARM'] = self.parametros.CAD * np.exp(
-                    balancoHidricoNormalDF['Neg'][mesAtual] / self.parametros.CAD)
+                    if mesAtual == 1:
+                        mesAnterior = 12
+                    elif mesAtual == 0:
+                        mesAtual = 12
+                        mesAnterior = 11
+                    else:
+                        mesAnterior = mesAtual - 1
 
-            else:
-                balancoHidricoNormalDF.loc[mesAtual, 'ARM'] = min(
-                    balancoHidricoNormalDF['ARM'][mesAnterior] + balancoHidricoNormalDF['P - ETP'][mesAtual], self.parametros.CAD)
-                balancoHidricoNormalDF.loc[mesAtual, 'Neg'] = self.parametros.CAD * np.log(
-                    balancoHidricoNormalDF['ARM'][mesAtual] / self.parametros.CAD)
+                if balancoHidricoNormalDF['P - ETP'][i, mesAtual] < 0:
+                    balancoHidricoNormalDF.loc[(i, mesAtual), 'Neg'] = balancoHidricoNormalDF['Neg'][i, mesAnterior] + \
+                                                              balancoHidricoNormalDF['P - ETP'][i, mesAtual]
+                    balancoHidricoNormalDF.loc[(i, mesAtual), 'ARM'] = self.parametros.CAD * np.exp(
+                        balancoHidricoNormalDF['Neg'][i, mesAtual] / self.parametros.CAD)
 
-            balancoHidricoNormalDF.loc[mesAtual, 'Alt'] = balancoHidricoNormalDF['ARM'][mesAtual] - \
-                                                          balancoHidricoNormalDF['ARM'][mesAnterior]
+                else:
+                    balancoHidricoNormalDF.loc[(i, mesAtual), 'ARM'] = min(
+                        balancoHidricoNormalDF['ARM'][i, mesAnterior] + balancoHidricoNormalDF['P - ETP'][i, mesAtual], self.parametros.CAD)
+                    balancoHidricoNormalDF.loc[(i, mesAtual), 'Neg'] = self.parametros.CAD * np.log(
+                        balancoHidricoNormalDF['ARM'][i, mesAtual] / self.parametros.CAD)
 
-            if balancoHidricoNormalDF['P - ETP'][mesAtual] >= 0:
-                balancoHidricoNormalDF.loc[mesAtual, 'Etr'] = balancoHidricoNormalDF['ETP'][mesAtual]
-            else:
-                balancoHidricoNormalDF.loc[mesAtual, 'Etr'] = balancoHidricoNormalDF['prec'][mesAtual] + abs(
-                    balancoHidricoNormalDF['Alt'][mesAtual])
+                balancoHidricoNormalDF.loc[(i, mesAtual), 'Alt'] = balancoHidricoNormalDF['ARM'][i, mesAtual] - \
+                                                          balancoHidricoNormalDF['ARM'][i, mesAnterior]
 
-            balancoHidricoNormalDF.loc[mesAtual, 'Def'] = balancoHidricoNormalDF['ETP'][mesAtual] - \
-                                                          balancoHidricoNormalDF['Etr'][mesAtual]
+                if balancoHidricoNormalDF['P - ETP'][i, mesAtual] >= 0:
+                    balancoHidricoNormalDF.loc[(i, mesAtual), 'Etr'] = balancoHidricoNormalDF['ETP'][i, mesAtual]
+                else:
+                    balancoHidricoNormalDF.loc[(i, mesAtual), 'Etr'] = balancoHidricoNormalDF['prec'][i, mesAtual] + abs(
+                        balancoHidricoNormalDF['Alt'][i, mesAtual])
 
-            if balancoHidricoNormalDF['ARM'][mesAtual] == self.parametros.CAD:
-                balancoHidricoNormalDF.loc[mesAtual, 'Exc'] = balancoHidricoNormalDF['P - ETP'][mesAtual] - \
-                                                              balancoHidricoNormalDF['Alt'][mesAtual]
+                balancoHidricoNormalDF.loc[(i, mesAtual), 'Def'] = balancoHidricoNormalDF['ETP'][i, mesAtual] - \
+                                                          balancoHidricoNormalDF['Etr'][i, mesAtual]
+
+                if balancoHidricoNormalDF['ARM'][i, mesAtual] == self.parametros.CAD:
+                    balancoHidricoNormalDF.loc[(i, mesAtual), 'Exc'] = balancoHidricoNormalDF['P - ETP'][i, mesAtual] - \
+                                                              balancoHidricoNormalDF['Alt'][i, mesAtual]
 
         return balancoHidricoNormalDF
 
@@ -399,8 +431,6 @@ class balancoHidrico():
 
                 ### Realiza os calculos do balanco hidrico com os dados especificados ###
     def simularBalancoHidrico(self, inicioSimulTuple, inicioPlantioTuple):
-
-
         def preSemeio(diaAtual, varDiaAnterior):
             varDiaAtual = VariaveisBalHidrico(self.parametros) # Receber parametros
 
@@ -410,7 +440,7 @@ class balancoHidrico():
             varDiaAtual['Kc'] = varDiaAnterior['Kc']
 
             #Calcula escoamento superficial em funcao da agua em excesso que entrou no sistema
-            varDiaAtual['Esc'] = self.calcularEsc(diaAtual)
+            (varDiaAtual['Esc'], varDiaAtual['ik']) = self.calcularEsc(diaAtual, varDiaAnterior)
             # Calcula Apport como precipitação + irrigação - escoamento superficial
             varDiaAtual['Apport'] = self.calcularApport(diaAtual, varDiaAtual['Esc'])
 
@@ -446,9 +476,9 @@ class balancoHidrico():
 
             ## Agora as outras variaveis sao determinadas pelas funcoes ja vistas
             varDiaAtual['ETP'] = self.calcularETP(diaAtual) # decendio para diario
-            varDiaAtual['Esc'] = self.calcularEsc(diaAtual) # funcao da agua em excesso
+            (varDiaAtual['Esc'], varDiaAtual['ik']) = self.calcularEsc(diaAtual, varDiaAnterior) # funcao da agua em excesso
             varDiaAtual['Apport'] = self.calcularApport(diaAtual, varDiaAtual['Esc']) # funcao da precipitacao, irrigacao e escoamento
-            varDiaAtual['Kc'] = self.calcularKc(diaAtual, inicioPlantio) # Calculado para o dia especifico, com aproximacoes de dados fornecidos
+            if self.cultura.tipoKc==1: varDiaAtual['Kc'] = self.calcularKc(diaAtual, inicioPlantio) # Calculado para o dia especifico, com aproximacoes de dados fornecidos
             varDiaAtual['Eps'] = self.calcularEps(varDiaAtual['ETP']) # mulch * ETP atual
             varDiaAtual['Etm'] = varDiaAtual['Eps']
 
@@ -499,7 +529,7 @@ class balancoHidrico():
             varDiaAtual['Hr'] = 0
             varDiaAtual['Kc'] = 1
 
-            varDiaAtual['Esc'] = self.calcularEsc(diaAtual)  # Agua atual em excesso que entrou no sistema
+            (varDiaAtual['Esc'], varDiaAtual['ik']) = self.calcularEsc(diaAtual, varDiaAnterior)  # Agua atual em excesso que entrou no sistema
             varDiaAtual['Apport'] = self.calcularApport(diaAtual, varDiaAtual['Esc']) # precipitacao + irrigacao - escoamento superficial
 
             varDiaAtual['Etm'] = self.calcularEps(varDiaAtual['ETP']) # mulch * ETP
@@ -530,9 +560,9 @@ class balancoHidrico():
         #print('to aqui')
 
         ## Começo da função balancoHidrico()
-        if self.ETPsDecendiais:
+        if self.ETPsDecendiais.any:
             #anos=len(self.parametros.anosDadosHistoricos)
-            #for ano in self.parametros.anosDadosHistoricos:
+            for ano in self.anosCalculo:
                 #anos+=1
                 #if ano in self.estacao.dados['data']:
                 #    print(self.estacao.dados['data'])
@@ -544,79 +574,81 @@ class balancoHidrico():
             #jm = self.dadosMeteorologicos.index(inicioSimulTuple[0])
             #ano=self.dadosMeteorologicos[:][jm].year
             #ano in self.limitesDadosHistoricos.
-            ano=self.limitesDadosHistoricos[0].year
-            inicioSimul = date(ano, inicioSimulTuple[0], inicioSimulTuple[1])
-            inicioPlantio = date(ano, inicioPlantioTuple[0], inicioPlantioTuple[1])
-            fimSimul = inicioPlantio
+            #ano=self.limitesDadosHistoricos[0].year
+                inicioSimul = date(ano, inicioSimulTuple[0], inicioSimulTuple[1])
+                inicioPlantio = date(ano, inicioPlantioTuple[0], inicioPlantioTuple[1])
+                fimSimul = inicioPlantio
             #print('Gerei datas')
             #print(inicioSimul)
             #print(fimSimul)
             #print(self.limitesDadosHistoricos)
+                if self.cultura.fases != 0:
+                    for fase in self.cultura.fases:
+                        fimSimul += timedelta(days=fase) # Inicio do plantio + dias que sao fase = Data final do plantio
+                    #timedelta é uma funcao
+                else:
+                    fimSimul = date(fimSimul.year+1, fimSimul.month, fimSimul.day)
 
-            for fase in self.cultura.fases:
-                fimSimul += timedelta(days=fase) # Inicio do plantio + dias que sao fase = Data final do plantio
-                #timedelta é uma funcao
-
-            diaColheita = fimSimul - timedelta(days=1)
+                diaColheita = fimSimul - timedelta(days=1)
 
             # Se a data de inicio esta dentro do desejado
-            if inicioSimul >= self.limitesDadosHistoricos[0]: #and fimSimul <= self.limitesDadosHistoricos[1]:
+                if inicioSimul >= self.limitesDadosHistoricos[0] and fimSimul <= self.limitesDadosHistoricos[1]:
                 #print('Inicio da simulacao OK')
-                diaAtual = inicioSimul # Inicia dia
+                    diaAtual = inicioSimul # Inicia dia
                 #print(diaAtual)
-                varDiaAnterior = VariaveisBalHidrico(self.parametros)  # Inicializa variaveis de saida e coloca alguns valores delas
+                    varDiaAnterior = VariaveisBalHidrico(self.parametros)  # Inicializa variaveis de saida e coloca alguns valores delas
 
                 # self.valoresDiarios[ano] = {}
 
-                while diaAtual < inicioPlantio:
+                    while diaAtual < inicioPlantio:
                     # Realiza o pre semeio: reserva util, evapotranspiracao, etc
-                    varDiaAtual = preSemeio(diaAtual, varDiaAnterior)
+                        varDiaAtual = preSemeio(diaAtual, varDiaAnterior)
                     # Atualizar variaveis de saida a cada dia calculado
-                    self.variaveisSaida = self.variaveisSaida.append(VariaveisSaida(varDiaAtual, index=[diaAtual], columns=self.columns))
+                        self.variaveisSaida = self.variaveisSaida.append(VariaveisSaida(varDiaAtual, index=[diaAtual], columns=self.columns))
 
                     # self.valoresDiarios[ano][diaAtual] = varDiaAtual
                     #n = diaAtual+timedelta(days=1)
                     #if (n.year != diaAtual.year):
                     #    diaAtual.year-=1
-                    diaAtual+=timedelta(days=1)
+                        diaAtual+=timedelta(days=1)
 
-                    varDiaAnterior = varDiaAtual
+                        varDiaAnterior = varDiaAtual
 
-                fase = 1
-                inicioFase = inicioPlantio
-                while diaAtual <= diaColheita:
+                    fase = 1
+                    inicioFase = inicioPlantio
+                    while diaAtual <= diaColheita:
                     # Para todos os dias eh feita :
-                    varDiaAtual = fasesFenologicas(diaAtual, varDiaAnterior, inicioPlantio)
+                        varDiaAtual = fasesFenologicas(diaAtual, varDiaAnterior, inicioPlantio)
 
+                        if self.cultura.fases != 0:
+                            if (diaAtual.day == (inicioFase + timedelta(days=self.cultura.fases[fase - 1])).day) and (diaAtual.month == (inicioFase + timedelta(days=self.cultura.fases[fase - 1])).month):
+                                fase += 1
+                                inicioFase = diaAtual
 
-                    if (diaAtual.day == (inicioFase + timedelta(days=self.cultura.fases[fase - 1])).day) and (diaAtual.month == (inicioFase + timedelta(days=self.cultura.fases[fase - 1])).month):
-                        fase += 1
-                        inicioFase = diaAtual
+                            varDiaAtual['fase'] = fase
 
-                    varDiaAtual['fase'] = fase
-
-                    self.variaveisSaida = self.variaveisSaida.append(VariaveisSaida(varDiaAtual, index=[diaAtual], columns=self.columns))
-
-                    # self.valoresDiarios[ano][diaAtual] = varDiaAtual
-                    diaAtual += timedelta(days=1)
-                    varDiaAnterior = varDiaAtual
-
-                while diaAtual < fimSimul:
-                    varDiaAtual = posColheita(diaAtual, varDiaAnterior)
-
-                    self.variaveisSaida = self.variaveisSaida.append(VariaveisSaida(varDiaAtual, index=[diaAtual], columns=self.columns))
+                        self.variaveisSaida = self.variaveisSaida.append(VariaveisSaida(varDiaAtual, index=[diaAtual], columns=self.columns))
 
                     # self.valoresDiarios[ano][diaAtual] = varDiaAtual
-                    diaAtual += timedelta(days=1)
-                    varDiaAnterior = varDiaAtual
+                        diaAtual += timedelta(days=1)
+                        varDiaAnterior = varDiaAtual
 
+                    while diaAtual < fimSimul:
+                        varDiaAtual = posColheita(diaAtual, varDiaAnterior)
+
+                        self.variaveisSaida = self.variaveisSaida.append(VariaveisSaida(varDiaAtual, index=[diaAtual], columns=self.columns))
+
+                    # self.valoresDiarios[ano][diaAtual] = varDiaAtual
+                        diaAtual += timedelta(days=1)
+                        varDiaAnterior = varDiaAtual
 
 
             self.balancoHidricoNormalDF = self.balancoHidricoNormal()
 
             if not self.variaveisSaida.empty:
 
-                return (pd.concat([self.variaveisSaida, self.dadosMeteorologicos], axis = 1), self.balancoHidricoNormalDF)
+                return (pd.concat([self.variaveisSaida, self.dadosMeteorologicos], axis = 1), self.balancoHidricoNormalDF, self.anosCalculo)
+                #return self.variaveisSaida, self.balancoHidricoNormalDF
 
 
         return 'Dados insuficientes'

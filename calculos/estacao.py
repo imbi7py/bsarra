@@ -122,8 +122,10 @@ class Estacao():
     def lerDadosMeteorologicosAgritempo(self, anosLista, inicioPlantio):
 
         dadosMeteorologicos = VariaveisSaida(columns=[self.keys[x] for x in self.usedKeys], index=[])
-        precipitacao = np.zeros([12,31])
-        temperatura = np.zeros([12, 31])
+        precipitacao = {}
+        temperatura = {}
+        #precipitacao = np.zeros([12,31])
+        #temperatura = np.zeros([12, 31])
 
         anos = anosLista + [max(anosLista) + 1]
 
@@ -146,12 +148,16 @@ class Estacao():
                     if data.year in anos:
                         #precipitacao[data] = None if linha['prec'] == '' else float(linha['prec'].replace(',', '.'))
                         #temperatura[data] = None if linha['tmed'] == '' else float(linha['tmed'].replace(',', '.'))
-                        if not linha['prec'] == '':
-                            precipitacao[data.month -1, data.day -1] += float(linha['prec'].replace(',', '.'))/len(anosLista)
-                        if not linha['tmed'] == '':
-                            temperatura[data.month -1, data.day -1] += float(linha['tmed'].replace(',', '.'))/len(anosLista)
+                        precipitacao[data] = None if linha['prec'] == '' else float(linha['prec'].replace(',', '.'))
+                        temperatura[data] = None if linha['tmed'] == '' else float(linha['tmed'].replace(',', '.'))
+                        dadosMeteorologicos = dadosMeteorologicos.append(
+                            VariaveisSaida(linha, columns=[self.keys[x] for x in self.usedKeys], index=[data]))
+                        #if not linha['prec'] == '':
+                        #    precipitacao[data.month -1, data.day -1] += float(linha['prec'].replace(',', '.'))/len(anosLista)
+                        #if not linha['tmed'] == '':
+                        #    temperatura[data.month -1, data.day -1] += float(linha['tmed'].replace(',', '.'))/len(anosLista)
                         #dataf = datetime.date(2000, data.month, data.day)
-                        dadosMeteorologicos = dadosMeteorologicos.append(VariaveisSaida(linha, columns=[self.keys[x] for x in self.usedKeys], index=[data]))
+                        #dadosMeteorologicos = dadosMeteorologicos.append(VariaveisSaida(linha, columns=[self.keys[x] for x in self.usedKeys], index=[data]))
 
 
                 else:
@@ -168,32 +174,36 @@ class Estacao():
 
             # dadosMeteorologicos = dadosMeteorologicos.dropna('index', 'all')
 
-            a = dadosMeteorologicos.first_valid_index()
-            #print(a)
-            b = dadosMeteorologicos.last_valid_index()
-            #print(b)
-
-            if a >= b:
-                if (b.month >= inicioPlantio[0]) and (b.day > inicioPlantio[1]):
-                    b = datetime.date(b.year + 1, inicioPlantio[0], inicioPlantio[1])
-                else:
-                    b = datetime.date(b.year, inicioPlantio[0], inicioPlantio[1])
-                #if (a.month < 12) | (a.day < 31):
-                #    a = datetime.date(a.year - 1, 12, 31)
-                idx = [b + datetime.timedelta(days=c) for c in range((a-b).days + 1)]
+            if dadosMeteorologicos.empty:
+                return dadosMeteorologicos
             else:
-                if (a.month >= inicioPlantio[0]) and (a.day > inicioPlantio[1]):
-                    a = datetime.date(a.year + 1, inicioPlantio[0], inicioPlantio[1])
+                a = dadosMeteorologicos.first_valid_index()
+                #print(a)
+                b = dadosMeteorologicos.last_valid_index()
+                #print(b)
+                if a >= b:
+                    if (b.month >= 1) and (b.day > 1):
+                    #if (b.month >= inicioPlantio[0]) and (b.day > inicioPlantio[1]):
+                    #b=datetime.date(b.year+1,inicioPlantio[0],inicioPlantio[1])
+                        b = datetime.date(b.year + 1, 1, 1)
+                    else:
+                        b = datetime.date(b.year, 1, 1)
+                    if (a.month < 12) | (a.day < 31):
+                        a = datetime.date(a.year - 1, 12, 31)
+                    idx = [b + datetime.timedelta(days=c) for c in range((a-b).days + 1)]
                 else:
-                    a = datetime.date(a.year, inicioPlantio[0], inicioPlantio[1])
-                #if (b.month < 12) | (b.day < 31):
-                #    b = datetime.date(b.year - 1, 12, 31)
-                idx = [a + datetime.timedelta(days=c) for c in range((b-a).days + 1)]
-            #print(a)
-            #print(b)
-            #print(idx)
-            dadosMeteorologicos = dadosMeteorologicos.reindex(idx)
-            dadosMeteorologicos.interpolate()
+                    if (a.month >= 1) and (a.day > 1):
+                        a = datetime.date(a.year + 1, 1, 1)
+                    else:
+                        a = datetime.date(a.year, 1, 1)
+                    if (b.month < 12) | (b.day < 31):
+                        b = datetime.date(b.year - 1, 12, 31)
+                    idx = [a + datetime.timedelta(days=c) for c in range((b-a).days + 1)]
+                #print(a)
+                #print(b)
+                #print(idx)
+                dadosMeteorologicos = dadosMeteorologicos.reindex(idx)
+                dadosMeteorologicos.interpolate()
             #lista= range(a.year, b.year)
                 #for year in anosLista:
                 #    if dadosMeteorologicos[self.keys[x]][366*anosLista.index(year)].isnan():
@@ -201,38 +211,35 @@ class Estacao():
 
                 #anosli=[a.year : b.year]
 
-            if dadosMeteorologicos.empty:
-                return dadosMeteorologicos
-            else:
-                dadosmeteorologicosed = dadosMeteorologicos
-                for i in range(365):
-                    for x in self.usedKeys:
-                        #vec = np.zeros(len(self.usedKeys))
-                        j=0
-                        l = len(dadosMeteorologicos[self.keys[x]])
-                        dadosmeteorologicosed[self.keys[x]][i] = 0 #dadosMeteorologicos[self.keys[x]][i]
-                        acum=0
-                        for year in range(b.year, a.year+1):
-                            if (year % 4 == 0)&((acum+i)<l):
-                                if not np.isnan(dadosMeteorologicos[self.keys[x]][acum + i]):
-                                    dadosmeteorologicosed[self.keys[x]][i] += dadosMeteorologicos[self.keys[x]][acum + i]
-                                    j+=1
-                                acum += 366
-                            elif ((acum+i)<l):
-                                if (i>59):
-                                    if not np.isnan(dadosMeteorologicos[self.keys[x]][acum + i-1]):
-                                        dadosmeteorologicosed[self.keys[x]][i] += dadosMeteorologicos[self.keys[x]][acum + i-1]
-                                        j+=1
-                                elif not np.isnan(dadosMeteorologicos[self.keys[x]][acum + i]):
-                                    dadosmeteorologicosed[self.keys[x]][i] += dadosMeteorologicos[self.keys[x]][acum + i]
-                                    j += 1
-                                acum += 365
+                #dadosmeteorologicosed = dadosMeteorologicos
+                #for i in range(365):
+                #    for x in self.usedKeys:
+                #        #vec = np.zeros(len(self.usedKeys))
+                #        j=0
+                #        l = len(dadosMeteorologicos[self.keys[x]])
+                #        dadosmeteorologicosed[self.keys[x]][i] = 0 #dadosMeteorologicos[self.keys[x]][i]
+                #        acum=0
+                #        for year in range(b.year, a.year+1):
+                #            if (year % 4 == 0)&((acum+i)<l):
+                #                if not np.isnan(dadosMeteorologicos[self.keys[x]][acum + i]):
+                #                    dadosmeteorologicosed[self.keys[x]][i] += dadosMeteorologicos[self.keys[x]][acum + i]
+                #                    j+=1
+                #                acum += 366
+                #            elif ((acum+i)<l):
+                #                if (i>59):
+                #                    if not np.isnan(dadosMeteorologicos[self.keys[x]][acum + i-1]):
+                #                        dadosmeteorologicosed[self.keys[x]][i] += dadosMeteorologicos[self.keys[x]][acum + i-1]
+                #                        j+=1
+                #                elif not np.isnan(dadosMeteorologicos[self.keys[x]][acum + i]):
+                #                    dadosmeteorologicosed[self.keys[x]][i] += dadosMeteorologicos[self.keys[x]][acum + i]
+                #                    j += 1
+                #                acum += 365
                         #print(dadosmeteorologicosed[self.keys[x]][i])
-                        dadosmeteorologicosed[self.keys[x]][i]=dadosmeteorologicosed[self.keys[x]][i]/j
+                #        dadosmeteorologicosed[self.keys[x]][i]=dadosmeteorologicosed[self.keys[x]][i]/j
 
                 #for mon in
                 #dadosDesejados =
-                dadosMeteorologicos = dadosmeteorologicosed[:][0:366]
+                #dadosMeteorologicos = dadosmeteorologicosed[:][0:366]
                 #dadosMeteorologicos = dadosMeteorologicos.reindex(ascending=True)
                 return dadosMeteorologicos
             #return dadosMeteorologicos

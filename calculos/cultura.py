@@ -1,4 +1,4 @@
-import sqlite3, pickle
+import sqlite3, pickle, numpy
 
 class Cultura():
     def __init__(self):
@@ -11,7 +11,8 @@ class Cultura():
         cursor.execute('''
         SELECT cultura.nome, configuracaoRegional.nomeConfiguracao, configuracaoRegional.estados,
                 grupo.nome, grupo.ciclo, configuracaoRegional.solo, grupo.tipo_kc, grupo.kc, configuracaoRegional.tipo_vrad, configuracaoRegional.vrad, grupo.fases,
-                configuracaoRegional.restricoesISNA, configuracaoRegional.restricoesTEMP, configuracaoRegional.TMM, configuracaoRegional.TMA, configuracaoRegional.riscoGeada
+                configuracaoRegional.restricoesISNA, configuracaoRegional.restricoesTEMP, configuracaoRegional.TMM, configuracaoRegional.TMA, configuracaoRegional.riscoGeada,
+                grupo.restricaoAltura, cultura.precMIN, configuracaoRegional.DHA
         FROM grupo, cultura, configuracaoRegional
         WHERE grupo.ID = ? AND grupo.culturaRegiao = configuracaoRegional.id AND cultura.id = configuracaoRegional.culturaID''', (grupoID,))
         # Coloca os dados em variaveis da classe
@@ -24,12 +25,21 @@ class Cultura():
             self.reservaUtilSolo = list(map(int, linha[5].split(",")))
             self.tipoKc = linha[6]
             self.tipoVrad = linha[8]
-            self.fases = pickle.loads(linha[10]) # esta em binario comprimido
-            self.restricoesISNA = linha[11].split(",")
+            if linha[10]:
+                self.fases = pickle.loads(linha[10]) # esta em binario comprimido
+            else:
+                self.fases=0
+            if linha[11]:
+                self.restricoesISNA = linha[11].split(",")
+            else:
+                self.restricoesISNA = 0
             self.restricoesTEMP = linha[12].split(",")
             self.restricoesTMM = linha[13].split(",")
             if linha[14]: self.restricoesTMA = linha[14].split(",")
             self.riscoGeada = linha[15]
+            self.RAlt = linha[16].split(",")
+            self.precMinima = linha[17]
+            self.RDHA=linha[18]
             #ADICIONAR RESTRICAO DE ISNA FASE 3 DO BANCO DE DADOS
 
 
